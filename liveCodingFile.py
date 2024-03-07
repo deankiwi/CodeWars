@@ -1,2 +1,2 @@
-# leetcode
+# codesignal
 # Name of question
