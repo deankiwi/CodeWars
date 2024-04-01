@@ -1,2 +1,2 @@
-# codesignal
+# INTERVIEWcodility
 # Name of question
