@@ -1,2 +1,2 @@
-# INTERVIEWcodility
+# leetcode
 # Name of question
