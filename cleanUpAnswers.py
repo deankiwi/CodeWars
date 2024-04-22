@@ -32,6 +32,10 @@ def moveAnswers(lines, fileName):
     # TODO check website and question are in correct format
     website = lines[0][1:].strip()
     question = lines[1][1:].strip()
+
+    if question == "Name of question":
+        print('Enter name of question on line 2')
+        return
     answers = lines[2:-1]
     newFileName = f"{website}/{question}.py"
     print("moving to: " + newFileName)
