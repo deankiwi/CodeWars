@@ -14,10 +14,10 @@ class ListNode:
         if self.next:
             self.next.display()
         else:
-            print(':end')
+            print(":end")
 
 
-def create_linked_list(head: List[int], pos = -1):
+def create_linked_list(head: List[int], pos=-1):
     output = []
     for num in head:
         output.append(ListNode(num))
@@ -27,3 +27,65 @@ def create_linked_list(head: List[int], pos = -1):
         output[-1].next = output[pos]
     return output[0]
 
+
+from typing import Optional, Tuple, List
+
+
+class TreeNode:
+    def __init__(
+        self,
+        val: int = 0,
+        left: Optional["TreeNode"] = None,
+        right: Optional["TreeNode"] = None,
+    ):
+        self.val = val
+        self.left = left
+        self.right = right
+
+
+def print_tree(root: Optional[TreeNode]) -> None:
+    if not root:
+        print("Empty tree")
+        return
+
+    # A queue to perform level-order traversal
+    queue: List[Tuple[Optional[TreeNode], int]] = [(root, 0)]
+    current_level = 0
+    current_level_nodes: List[str] = []
+
+    while queue:
+        node, level = queue.pop(0)
+
+        if level > current_level:
+            print(" ".join(current_level_nodes))
+            current_level_nodes = []
+            current_level = level
+
+        current_level_nodes.append(str(node.val) if node else "null")
+
+        if node:
+            queue.append((node.left, level + 1))
+            queue.append((node.right, level + 1))
+
+    # Print the last level
+    if current_level_nodes:
+        print(" ".join(current_level_nodes))
+
+
+# Example usage:
+if __name__ == "__main__":
+    # Construct a sample binary tree
+    #       1
+    #      / \
+    #     2   3
+    #    /|   |\
+    #   4 5   6 7
+    tree = TreeNode(1)
+    tree.left = TreeNode(2)
+    tree.right = TreeNode(3)
+    tree.left.left = TreeNode(4)
+    tree.left.right = TreeNode(5)
+    tree.right.left = TreeNode(6)
+    tree.right.right = TreeNode(7)
+
+    print_tree(tree)
