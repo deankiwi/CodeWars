@@ -1,3 +1,4 @@
+from collections import deque
 from typing import List
 
 
@@ -41,6 +42,7 @@ class TreeNode:
         self.val = val
         self.left = left
         self.right = right
+        self.next = None
 
 
 def print_tree(root: Optional[TreeNode]) -> None:
@@ -71,6 +73,28 @@ def print_tree(root: Optional[TreeNode]) -> None:
     if current_level_nodes:
         print(" ".join(current_level_nodes))
 
+
+def array_to_binary_tree(arr):
+    if not arr:
+        return None
+
+    root = TreeNode(arr[0])
+    queue = deque([root])
+    i = 1
+    while queue and i < len(arr):
+        current = queue.popleft()
+        
+        if i < len(arr) and arr[i] is not None:
+            current.left = TreeNode(arr[i])
+            queue.append(current.left)
+        i += 1
+        
+        if i < len(arr) and arr[i] is not None:
+            current.right = TreeNode(arr[i])
+            queue.append(current.right)
+        i += 1
+    
+    return root
 
 # Example usage:
 if __name__ == "__main__":
