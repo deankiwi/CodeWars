@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Create a Python starter file for a LeetCode problem and open it in VS Code.
+Create a starter file for a LeetCode problem in Python or Go and open it in VS Code.
 
 Usage:
   # optional: auto-cookie method (recommended)
@@ -10,10 +10,13 @@ Usage:
   export LEETCODE_SESSION="..."
   export LEETCODE_CSRF="..."
 
-  python make_leetcode_py.py "https://leetcode.com/problems/find-n-unique-integers-sum-up-to-zero/description/?envType=daily-question&envId=2025-09-07"
+  # Python (default)
+  python make_leetcode.py "https://leetcode.com/problems/find-n-unique-integers-sum-up-to-zero/description/"
+
+  # Go
+  python make_leetcode.py --lang go "https://leetcode.com/problems/two-sum/description/"
 """
 import argparse
-import json
 import os
 import re
 import subprocess
@@ -21,11 +24,13 @@ import sys
 from datetime import datetime
 from html import unescape
 from pathlib import Path
+from typing import Optional
 
 import requests
 
 GRAPHQL_URL = "https://leetcode.com/graphql"
 
+# -------- URL / cookies / API --------
 
 def slug_from_url(url: str) -> str:
     u = url.split("?")[0]
@@ -36,18 +41,14 @@ def slug_from_url(url: str) -> str:
         raise ValueError("Could not parse titleSlug from URL; expected /problems/<slug>/")
     return m.group(1)
 
-
 def get_cookies():
     """
     Prefer pulling fresh cookies from your logged-in browser (browser-cookie3).
     Fallback to env vars LEETCODE_SESSION + LEETCODE_CSRF.
     Returns dict of cookies (at least LEETCODE_SESSION, csrftoken).
     """
-    # Try browser-cookie3 (Chrome/Edge/Brave/Firefox etc.)
     try:
         import browser_cookie3  # type: ignore
-
-        # Try Chrome-like first; cj is a CookieJar
         for getter in (
             lambda: browser_cookie3.chrome(domain_name="leetcode.com"),
             lambda: browser_cookie3.edge(domain_name="leetcode.com"),
@@ -64,7 +65,6 @@ def get_cookies():
     except Exception:
         pass
 
-    # Fallback to env vars
     sess = os.getenv("LEETCODE_SESSION")
     csrf = os.getenv("LEETCODE_CSRF") or os.getenv("csrftoken")
     if not (sess and csrf):
@@ -74,7 +74,6 @@ def get_cookies():
             "OR export env vars LEETCODE_SESSION and LEETCODE_CSRF (csrftoken)."
         )
     return {"LEETCODE_SESSION": sess, "csrftoken": csrf}
-
 
 def fetch_problem(slug: str, cookies: dict) -> dict:
     query = """
@@ -115,33 +114,83 @@ def fetch_problem(slug: str, cookies: dict) -> dict:
         raise RuntimeError("No question returned (cookies expired or insufficient permissions?).")
     return q
 
+# -------- Language handling --------
 
-def pick_python_snippet(code_snippets):
+LANG_CHOICES = ("python", "go")
+
+EXT_BY_LANG = {
+    "python": "py",
+    "go": "go",
+}
+
+COMMENT_PREFIX = {
+    "python": "# ",
+    "go": "// ",
+}
+
+# LeetCode uses langSlug "python3"/"python" for Python and "golang" for Go
+LANGSLUG_PREFERENCE = {
+    "python": ("python3", "python"),
+    "go": ("golang", "go"),
+}
+
+LANGNAME_FALLBACKS = {
+    "python": ("python3", "python"),
+    "go": ("go",),
+}
+
+def normalize_lang(s: str) -> str:
+    s = s.strip().lower()
+    if s in ("py", "python3"):
+        return "python"
+    if s in ("go", "golang"):
+        return "go"
+    if s in LANG_CHOICES:
+        return s
+    raise SystemExit(f"Unsupported --lang '{s}'. Choose from: {', '.join(LANG_CHOICES)}")
+
+def pick_snippet(code_snippets, lang: str) -> str:
     """
-    Choose Python3 starter code if available; else a minimal fallback.
+    Pick a code snippet for the requested language, or provide a minimal fallback.
     """
     if code_snippets:
-        # Prefer Python3, then Python
-        for target in ("python3", "python"):
+        # Try by langSlug first
+        for target in LANGSLUG_PREFERENCE[lang]:
             for snip in code_snippets:
                 if (snip.get("langSlug") or "").lower() == target:
                     return snip.get("code") or ""
+        # Then by human-readable lang
+        for target in LANGNAME_FALLBACKS[lang]:
             for snip in code_snippets:
-                if (snip.get("lang") or "").lower() == "python3":
+                if (snip.get("lang") or "").lower() == target:
                     return snip.get("code") or ""
-                if (snip.get("lang") or "").lower().startswith("python"):
-                    return snip.get("code") or ""
-    # Fallback template
-    return (
-        "from typing import *\n\n"
-        "class Solution:\n"
-        "    def TODO_replace_with_function(self, *args, **kwargs):\n"
-        "        pass\n\n"
-        "if __name__ == \"__main__\":\n"
-        "    # TODO: instantiate Solution() and call method with sample inputs\n"
-        "    pass\n"
-    )
 
+    # Fallbacks
+    if lang == "python":
+        return (
+            "from typing import *\n\n"
+            "class Solution:\n"
+            "    def TODO_replace_with_function(self, *args, **kwargs):\n"
+            "        pass\n\n"
+            "if __name__ == \"__main__\":\n"
+            "    # TODO: instantiate Solution() and call method with sample inputs\n"
+            "    pass\n"
+        )
+    else:  # go
+        return (
+            "package main\n\n"
+            "import \"fmt\"\n\n"
+            "// TODO: implement solution function(s)\n"
+            "func TODOReplaceWithFunction() {\n"
+            "    // ...\n"
+            "}\n\n"
+            "func main() {\n"
+            "    // TODO: call your function(s) with sample inputs\n"
+            "    fmt.Println(\"stub\")\n"
+            "}\n"
+        )
+
+# -------- File helpers --------
 
 def sanitize_title(title: str) -> str:
     s = title.strip().lower()
@@ -150,36 +199,30 @@ def sanitize_title(title: str) -> str:
     s = re.sub(r"-{2,}", "-", s).strip("-")
     return s or "problem"
 
-
-def build_header_comment(q: dict, url: str) -> str:
+def build_header_comment(q: dict, url: str, lang: str) -> str:
+    prefix = COMMENT_PREFIX[lang]
     date_str = datetime.now().strftime("%Y-%m-%d")
-    header = f"""# {q['title']} — LeetCode #{q['questionId']} ({q['difficulty']})
-# URL: {url}
-# Slug: {q['titleSlug']}
-# Difficulty: {q['difficulty']}
-# Paid only: {bool(q.get('isPaidOnly'))}
-# Fetched: {date_str}
-
-"""
-    return header
-
+    header_lines = [
+        f"{prefix}{q['title']} — LeetCode #{q['questionId']} ({q['difficulty']})",
+        f"{prefix}URL: {url}",
+        f"{prefix}Slug: {q['titleSlug']}",
+        f"{prefix}Difficulty: {q['difficulty']}",
+        f"{prefix}Paid only: {bool(q.get('isPaidOnly'))}",
+        f"{prefix}Fetched: {date_str}",
+        "",
+    ]
+    return "\n".join(header_lines) + "\n"
 
 def ensure_dir(p: Path):
     p.mkdir(parents=True, exist_ok=True)
 
-
-def write_file(path: Path, header: str, code: str, sample: str | None):
-    # If snippet doesn't include a main block, add a tiny harness stub
-    needs_stub = "if __name__" not in code
+def write_file(path: Path, header: str, code: str, sample: Optional[str], lang: str):
     sample_section = ""
     if sample and sample.strip():
-        sample_section = (
-            f"\n# Sample Test Case (from LeetCode)\n# {unescape(sample.strip())}\n"
-        )
-
+        prefix = COMMENT_PREFIX[lang]
+        sample_section = f"\n{prefix}Sample Test Case (from LeetCode)\n{prefix}{unescape(sample.strip())}\n"
     content = header + code.rstrip() + sample_section + "\n"
     path.write_text(content, encoding="utf-8")
-
 
 def open_in_vscode(path: Path):
     try:
@@ -187,16 +230,22 @@ def open_in_vscode(path: Path):
     except FileNotFoundError:
         print(
             "VS Code CLI 'code' not found on PATH. Open manually, or enable it via:\n"
-            "VS Code → Command Palette → 'Shell Command: Install 'code' command in PATH'"
+            "VS Code → Command Palette → 'Shell Command: Install 'code' command in PATH'\n"
         )
 
+# -------- CLI --------
 
 def main():
-    ap = argparse.ArgumentParser(description="Create ./leetcode/{id}-{title}.py starter file for a LeetCode problem and open it in VS Code.")
+    ap = argparse.ArgumentParser(
+        description="Create ./leetcode/{id}-{title}.{py|go} starter file for a LeetCode problem and open it in VS Code."
+    )
     ap.add_argument("url", help="LeetCode problem URL")
+    ap.add_argument("--lang", default="python", help="Target language: python | go (default: python)")
     ap.add_argument("--force", "-f", action="store_true", help="Overwrite file if it exists")
     ap.add_argument("--dir", default="leetcode", help="Target directory (default: ./leetcode)")
     args = ap.parse_args()
+
+    lang = normalize_lang(args.lang)
 
     slug = slug_from_url(args.url)
     cookies = get_cookies()
@@ -205,22 +254,23 @@ def main():
     title = q["title"]
     qid = q["questionId"]
     safe_title = sanitize_title(title)
+    ext = EXT_BY_LANG[lang]
+
     target_dir = Path(args.dir)
     ensure_dir(target_dir)
-    out_path = target_dir / f"{qid}-{safe_title}.py"
+    out_path = target_dir / f"{qid}-{safe_title}.{ext}"
 
     if out_path.exists() and not args.force:
         print(f"File already exists: {out_path}\nUse --force to overwrite.")
         open_in_vscode(out_path)
         return
 
-    code = pick_python_snippet(q.get("codeSnippets") or [])
-    header = build_header_comment(q, f"https://leetcode.com/problems/{slug}/")
-    write_file(out_path, header, code, q.get("sampleTestCase"))
+    code = pick_snippet(q.get("codeSnippets") or [], lang)
+    header = build_header_comment(q, f"https://leetcode.com/problems/{slug}/", lang)
+    write_file(out_path, header, code, q.get("sampleTestCase"), lang)
 
     print(f"Created → {out_path}")
     open_in_vscode(out_path)
-
 
 if __name__ == "__main__":
     main()
